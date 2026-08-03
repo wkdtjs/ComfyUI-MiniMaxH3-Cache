@@ -177,7 +177,6 @@ class _MiniMaxH3Cache:
                 self.cnt_b += 1
                 self.consecutive_skips += 1
                 
-                # ⭐ 修复 2：将 [🦘SKIP] 打印提前到 return 之前执行！
                 if self.verbose:
                     print(f"[MiniMaxH3-Cache] Step {self.step_counter} [🦘 SKIP] - (rel_l1: {self.accumulated_rel_l1:.4f} < thresh: {threshold:.4f})")
                     
@@ -185,17 +184,42 @@ class _MiniMaxH3Cache:
                 if isinstance(args, dict):
                     args["img"] = img_output
                 return {"img": img_output}
-            else:
-                skip_reason = []
-                if not is_below_thresh: 
-                    skip_reason.append(f"rel_l1({self.accumulated_rel_l1:.4f}) >= thresh({threshold:.4f})")
-                if not is_under_mcs: 
-                    skip_reason.append(f"reached max_steps({self.max_steps})")
-                if not in_accelerate_range: 
-                    skip_reason.append(f"progress({progress*100:.0f}%) outside [{self.start_percent*100:.0f}%, {self.end_percent*100:.0f}%]")
             
-                if self.verbose:
-                    print(f"[MiniMaxH3-Cache] Step {self.step_counter} [🐢 RUN] - {', '.join(skip_reason)}")
+            # 未跳过原因记录
+            skip_reason = []
+            if not is_below_thresh: 
+                skip_reason.append(f"rel_l1({self.accumulated_rel_l1:.4f}) >= thresh({threshold:.4f})")
+            if not is_under_mcs: 
+                skip_reason.append(f"reached max_steps({self.max_steps})")
+            if not in_accelerate_range: 
+                skip_reason.append(f"progress({progress*100:.0f}%) outside [{self.start_percent*100:.0f}%, {self.end_percent*100:.0f}%]")
+        else:
+            # ⭐ 补全第 1 步的日志原因（无历史缓存）
+            skip_reason = ["initial step (no cache)"]
+                    
+        # 🐢 统一打印 RUN 日志（包含第 1 步）
+        if self.verbose:
+            print(f"[MiniMaxH3-Cache] Step {self.step_counter} [🐢 RUN] - {', '.join(skip_reason)}")
+            
+        # 🔄 未命中缓存 / 第 1 步：真实重算 RUN
+        self.cnt_a += 1
+        self.consecutive_skips = 0
+        self.cached_residual = None
+        
+        self.current_hidden_states = img.detach().clone()
+        self.previous_feature_sig = self._signature(cache_ranges)
+        
+        start_img = img.clone()
+        
+        res = original_block(args)
+        output_img = res["img"] if isinstance(res, dict) else res
+        
+        new_residual = output_img - start_img
+        self._store_residual(new_residual)
+        
+        self.accumulated_rel_l1 = 0.0
+        
+        return res
                 
         # 🔄 未命中缓存 / 不在加速百分比区间 / 达到熔断上限：真实重算 RUN
         self.cnt_a += 1
