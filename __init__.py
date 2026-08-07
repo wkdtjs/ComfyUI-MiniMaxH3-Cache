@@ -173,8 +173,7 @@ def apply_minimax_h3_patch():
         video_out = video_out[:, :, :orig_t, :orig_h, :orig_w]
         audio_out = minimax_model.unpack_audio(a)
         
-        slope_a = minimax_model.time_shift_slope(sigma_v, shift_v, shift_a).to(audio_out.dtype)
-        return [-video_out.to(video_x.dtype), (-slope_a) * audio_out.to(audio_x.dtype)]
+        return [-video_out.to(video_x.dtype), -audio_out.to(audio_x.dtype)]
     
     # 替换绑存方法
     MiniMaxH3Model._run_blocks = _run_blocks
